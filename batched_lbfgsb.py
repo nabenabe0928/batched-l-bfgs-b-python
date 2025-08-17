@@ -32,7 +32,6 @@ from packaging.version import Version
 from scipy import __version__ as scipy_version
 from scipy.optimize import _lbfgsb as scipy_lbfgsb
 
-
 if TYPE_CHECKING:
     from typing import Any
     from typing import Protocol
@@ -95,6 +94,8 @@ class _WorkingArraysAndFixedArgs:
         pgtol: float,
         max_line_search: int,
     ) -> None:
+        self._csave: np.ndarray | None
+        self._ln_task: np.ndarray | None
         if _is_lbfgsb_fortran:
             self._ln_task = None
             self._csave = np.zeros((batch_size, 1), dtype="S60")
@@ -181,7 +182,7 @@ class _TaskStatusManager:
             self._update_task_status(batch_id, 5, 504)
         return reach_limit
 
-    def reach_evaluation_limit(self, batch_id: int) -> None:
+    def reach_evaluation_limit(self, batch_id: int) -> bool:
         if reach_limit := self._n_evals[batch_id] > self._max_evals:
             self.is_batch_terminated[batch_id] = True
             self._update_task_status(batch_id, 5, 502)
@@ -242,8 +243,8 @@ def _lbfgsb_inplace_update(
     f: np.ndarray,
     g: np.ndarray,
     data: _WorkingArraysAndFixedArgs,
-    task_status: _TaskStatusManager,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    task_status: np.ndarray,
+) -> None:
     lbfgsb_args = data.lbfgsb_args(batch_id, task_status, x, f, g)
     scipy_lbfgsb.setulb(*lbfgsb_args)  # x, f, g will be modified in place.
 
@@ -327,42 +328,3 @@ def batched_lbfgsb(
                     break
 
     return batched_x.reshape(original_x_shape), f_vals.reshape(original_x_shape[:-1]), tm.info
-
-
-if __name__ == "__main__":
-    import time
-    from scipy.optimize import fmin_l_bfgs_b
-
-    def rastrigin_and_grad(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        A = 10.0
-        dim = x.shape[-1]
-        _2pi_x = 2 * np.pi * x
-
-        f = A * dim + np.sum(x**2 - A * np.cos(_2pi_x), axis=-1)
-        g = 2 * x + 2 * np.pi * A * np.sin(_2pi_x)
-        return f, g
-
-    def sphere_and_grad(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        f = np.sum(x**2, axis=-1)
-        g = 2 * x
-        return f, g
-
-    dim = 10
-    n_localopts = 100
-    R = 5.12
-    rng = np.random.RandomState(0)
-    X0 = rng.random((n_localopts, dim)) * 2 * R - R
-    bounds = np.array([[-R, R]]*dim)
-    fs2 = []
-
-    start = time.time()
-    # _, fs1, _ = batched_lbfgsb(func_and_grad=sphere_and_grad, x0=X0.copy(), bounds=bounds.copy())
-    _, fs1, _ = batched_lbfgsb(func_and_grad=rastrigin_and_grad, x0=X0.copy(), bounds=bounds.copy(), max_evals=3)
-    print(f"Batched Elapsed Time: {(time.time() - start)*1000:.2f} [ms]")
-
-    start = time.time()
-    for x0 in X0:
-        _, f, i2 = fmin_l_bfgs_b(rastrigin_and_grad, x0=x0.copy(), bounds=bounds, maxfun=3)
-        fs2.append(f)
-    print(f"Sequential Elapsed Time: {(time.time() - start)*1000:.2f} [ms]")
-    print("Results are all close?:", np.allclose(fs1, fs2))
