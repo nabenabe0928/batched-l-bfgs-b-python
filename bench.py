@@ -7,12 +7,12 @@ from batched_lbfgsb import batched_lbfgsb
 from scipy.optimize import fmin_l_bfgs_b
 
 
-k_batched = torch.rand(50, 100, 100)
-C = torch.rand(100, 100)
+k_batched = torch.rand(10, 300)
+C = torch.rand(300, 300)
 
 
-def rastrigin_and_grad(x: np.ndarray, batched: bool) -> tuple[np.ndarray, np.ndarray]:
-    if batched:
+def rastrigin_and_grad(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    if len(x.shape) == 2:
         k = k_batched
     else:
         k = k_batched[0]
@@ -30,9 +30,9 @@ def rastrigin_and_grad(x: np.ndarray, batched: bool) -> tuple[np.ndarray, np.nda
 rng = np.random.RandomState(42)
 X0 = rng.random((10, 50)) * 10.24 - 5.12
 start = time.time()
-batched_lbfgsb(lambda x: rastrigin_and_grad(x, True), x0=X0)
+batched_lbfgsb(rastrigin_and_grad, x0=X0)
 print(f"Batched: {(time.time() - start)*1000:.2f} ms")
 start = time.time()
 for x0 in X0:
-    fmin_l_bfgs_b(lambda x: rastrigin_and_grad(x, False), x0=x0)
+    fmin_l_bfgs_b(rastrigin_and_grad, x0=x0)
 print(f"SciPy: {(time.time() - start)*1000:.2f} ms")

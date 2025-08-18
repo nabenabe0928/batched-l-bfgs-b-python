@@ -140,13 +140,13 @@ class _WorkingArraysAndFixedArgs:
             self._wa[batch_id],
             self._iwa[batch_id],
             task_status,
-            *((-1, ) if _is_lbfgsb_fortran else ()),
-            *((self._csave[batch_id], ) if self._csave is not None else ()),
+            *((-1,) if _is_lbfgsb_fortran else ()),
+            *((self._csave[batch_id],) if self._csave is not None else ()),
             self._lsave[batch_id],
             self._isave[batch_id],
             self._dsave[batch_id],
             self._max_line_search,
-            *((self._ln_task[batch_id], ) if self._ln_task is not None else ()),
+            *((self._ln_task[batch_id],) if self._ln_task is not None else ()),
         )
 
 
