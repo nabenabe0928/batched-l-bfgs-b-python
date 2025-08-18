@@ -1,7 +1,7 @@
 """
 Please note that this is a port of the L-BFGS-B iplementation from SciPy.
 
-Significantly modified to adapt to Optuna by Shuhei Watanabe (2025) <shuheiwatanabe@preferred.jp>
+Heavily modified to adapt to Optuna by Shuhei Watanabe (2025) <shuhei.watanabe.utokyo@gmail.com>
 
 License for the Python wrapper
 ==============================
