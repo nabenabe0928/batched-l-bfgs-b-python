@@ -7,7 +7,7 @@ from scipy.optimize import fmin_l_bfgs_b
 from batched_lbfgsb import batched_lbfgsb
 
 
-def rastrigin_and_grad(x: np.ndarray, *args) -> tuple[np.ndarray, np.ndarray]:
+def rastrigin_and_grad(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     A = 10.0
     dim = x.shape[-1]
     _2pi_x = 2 * np.pi * x
