@@ -1,10 +1,10 @@
 import time
 from typing import Any
 
-import pytest
-import numpy as np
-from scipy.optimize import fmin_l_bfgs_b
 from batched_lbfgsb import batched_lbfgsb
+import numpy as np
+import pytest
+from scipy.optimize import fmin_l_bfgs_b
 
 
 def rastrigin_and_grad(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -21,7 +21,7 @@ def X0_and_bounds(dim: int, n_localopts: int) -> tuple[np.ndarray, np.ndarray]:
     R = 5.12
     rng = np.random.RandomState(0)
     X0 = rng.random((n_localopts, dim)) * 2 * R - R
-    bounds = np.array([[-R, R]]*dim)
+    bounds = np.array([[-R, R]] * dim)
     return X0, bounds
 
 
@@ -45,9 +45,8 @@ def _verify_results(X0: np.ndarray, kwargs_ours: Any, kwargs_scipy: Any) -> None
 
 
 @pytest.mark.parametrize(
-    "kwargs_ours,kwargs_scipy", [
-        ({}, {}), ({"max_evals": 3}, {"maxfun": 3}), ({"max_iters": 3}, {"maxiter": 3})
-    ]
+    "kwargs_ours,kwargs_scipy",
+    [({}, {}), ({"max_evals": 3}, {"maxfun": 3}), ({"max_iters": 3}, {"maxiter": 3})],
 )
 def test_batched_lbfgsb(kwargs_ours: Any, kwargs_scipy: Any) -> None:
     dim = 10
@@ -59,9 +58,8 @@ def test_batched_lbfgsb(kwargs_ours: Any, kwargs_scipy: Any) -> None:
 
 
 @pytest.mark.parametrize(
-    "kwargs_ours,kwargs_scipy", [
-        ({}, {}), ({"max_evals": 3}, {"maxfun": 3}), ({"max_iters": 3}, {"maxiter": 3})
-    ]
+    "kwargs_ours,kwargs_scipy",
+    [({}, {}), ({"max_evals": 3}, {"maxfun": 3}), ({"max_iters": 3}, {"maxiter": 3})],
 )
 @pytest.mark.parametrize("l,u", [(-np.inf, None), (None, np.inf), (-np.inf, np.inf), (None, None)])
 def test_batched_lbfgsb_without_bounds(
