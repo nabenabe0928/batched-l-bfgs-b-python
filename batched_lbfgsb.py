@@ -94,6 +94,7 @@ class _WorkingArraysAndFixedArgs:
         pgtol: float,
         max_line_search: int,
     ) -> None:
+        # See https://github.com/scipy/scipy/blob/v1.15.0/scipy/optimize/__lbfgsb.c
         self._csave: np.ndarray | None
         self._ln_task: np.ndarray | None
         if _is_lbfgsb_fortran:
@@ -188,25 +189,21 @@ class _TaskStatusManager:
             self._update_task_status(batch_id, 5, 502)
         return reach_limit
 
-    def is_new_parameter_suggested(self, batch_id: int) -> bool:
-        if suggested := self._judge_which_status(batch_id, status_id=1):
-            self._n_iterations[batch_id] += 1
-            suggested &= (
-                self.reach_iteration_limit(batch_id)
-                or self.reach_evaluation_limit(batch_id)
-            )
-        return suggested
-
     def should_evaluate(self, batch_id: int) -> bool:
         if should_evaluate := self._judge_which_status(batch_id, status_id=3):
             self._n_evals[batch_id] += 1
         return should_evaluate
 
     def should_terminate_batch(self, batch_id: int) -> bool:
-        if (
-            not self.is_batch_terminated[batch_id]
-            and not self._judge_which_status(batch_id, status_id=0)  # Start
-            and not self._judge_which_status(batch_id, status_id=1)  # New parameter
+        if self.is_batch_terminated[batch_id]:
+            return True
+        if self._judge_which_status(batch_id, status_id=1):  # New parameter suggested.
+            self._n_iterations[batch_id] += 1
+            self.is_batch_terminated[batch_id] |= (
+                self.reach_iteration_limit(batch_id) or self.reach_evaluation_limit(batch_id)
+            )
+        elif (
+            not self._judge_which_status(batch_id, status_id=0)  # Start
             and not self._judge_which_status(batch_id, status_id=3)  # Next function evaluation
         ):
             self.is_batch_terminated[batch_id] = True
@@ -305,12 +302,11 @@ def batched_lbfgsb(
         Mathematical Software, 38, 1.
     """
     original_x_shape = x0.shape
-    batched_x = x0.reshape(-1, original_x_shape[-1])
+    batched_x = x0.reshape(-1, original_x_shape[-1]).copy()
     batch_size = len(batched_x)
     bounds = np.array([[-np.inf, np.inf]] * x0.shape[-1]).T if bounds is None else bounds.T
     data = _WorkingArraysAndFixedArgs(batch_size, bounds, m, factr, pgtol, max_line_search)
 
-    # Ref. https://github.com/scipy/scipy/blob/v1.15.0/scipy/optimize/__lbfgsb.c
     f_vals = np.zeros(batch_size, dtype=np.float64)
     grads = np.zeros_like(batched_x, dtype=np.float64)
     tm = _TaskStatusManager(batch_size, max_iters=max_iters, max_evals=max_evals)
@@ -322,9 +318,7 @@ def batched_lbfgsb(
             x, f, g = batched_x[b], f_vals[b], grads[b]
             while not tm.should_terminate_batch(b):
                 _lbfgsb_inplace_update(b, x, f, g, data, tm.task_status[b])
-                if tm.is_new_parameter_suggested(b):
-                    break
-                elif tm.should_evaluate(b):
+                if tm.should_evaluate(b):
                     break
 
     return batched_x.reshape(original_x_shape), f_vals.reshape(original_x_shape[:-1]), tm.info
