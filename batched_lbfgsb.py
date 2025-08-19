@@ -1,5 +1,6 @@
 """
-Please note that this is a port of the L-BFGS-B iplementation from SciPy.
+Please note that this is a port of the L-BFGS-B iplementation from SciPy and this implementation
+may not work in future due to the dependency on the SciPy's internal API.
 
 Heavily modified to adapt to Optuna by Shuhei Watanabe (2025) <shuhei.watanabe.utokyo@gmail.com>
 
