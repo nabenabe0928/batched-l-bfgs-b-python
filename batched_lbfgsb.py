@@ -88,7 +88,7 @@ task_messages = {
 _is_lbfgsb_fortran = Version(scipy_version) < Version("1.15.0")
 
 
-class _WorkingArraysAndFixedArgs:
+class _DataConstantInPython:
     def __init__(
         self,
         batch_size: int,
@@ -245,7 +245,7 @@ def _lbfgsb_inplace_update(
     x: np.ndarray,
     f: np.ndarray,
     g: np.ndarray,
-    data: _WorkingArraysAndFixedArgs,
+    data: _DataConstantInPython,
     task_status: np.ndarray,
 ) -> None:
     lbfgsb_args = data.lbfgsb_args(batch_id, task_status, x, f, g)
@@ -310,17 +310,16 @@ def batched_lbfgsb(
     batched_x = x0.reshape(-1, (original_x_shape := x0.shape)[-1]).copy()
     b_indices = np.arange((batch_size := len(batched_x)), dtype=int)
     bounds = np.array([[-np.inf, np.inf]] * x0.shape[-1]).T if bounds is None else bounds.T
-    data = _WorkingArraysAndFixedArgs(batch_size, bounds, m, factr, pgtol, max_line_search)
+    data = _DataConstantInPython(batch_size, bounds, m, factr, pgtol, max_line_search)
     f_vals = np.zeros(batch_size, dtype=np.float64)
     grads = np.zeros_like(batched_x, dtype=np.float64)
     tm = _TaskStatusManager(batch_size, max_iters=max_iters, max_evals=max_evals)
-    while not all(tm.is_batch_terminated):
-        batch_indices = b_indices[~tm.is_batch_terminated]
+    while (batch_indices := b_indices[~tm.is_batch_terminated]).size:
         f_vals[batch_indices], grads[batch_indices] = func_and_grad(batched_x[batch_indices])
         for b in batch_indices:
-            x, f, g = batched_x[b], f_vals[b], grads[b]
+            x, f, g, task_status = batched_x[b], f_vals[b], grads[b], tm.task_status[b]
             while not tm.should_terminate_batch(b):
-                _lbfgsb_inplace_update(b, x, f, g, data, tm.task_status[b])
+                _lbfgsb_inplace_update(b, x, f, g, data, task_status)
                 if tm.should_evaluate(b):
                     break
     return batched_x.reshape(original_x_shape), f_vals.reshape(original_x_shape[:-1]), tm.info
