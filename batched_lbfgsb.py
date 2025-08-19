@@ -101,11 +101,12 @@ class _WorkingArraysAndFixedArgs:
         # See https://github.com/scipy/scipy/blob/v1.15.0/scipy/optimize/__lbfgsb.c
         self._csave: np.ndarray | None
         self._ln_task: np.ndarray | None
+        int_type = scipy_lbfgsb.types.intvar.dtype if _is_lbfgsb_fortran else np.int32
         if _is_lbfgsb_fortran:
             self._ln_task = None
             self._csave = np.zeros((batch_size, 1), dtype="S60")
         else:
-            self._ln_task = np.zeros((batch_size, 2), dtype=np.int32)
+            self._ln_task = np.zeros((batch_size, 2), dtype=int_type)
             self._csave = None
 
         self._m = m
@@ -118,14 +119,14 @@ class _WorkingArraysAndFixedArgs:
         bounds_map = {(False, False): 0, (True, False): 1, (True, True): 2, (False, True): 3}
         self._nbd = np.array(
             [bounds_map[if1, if2] for if1, if2 in zip(*np.isfinite(bounds).tolist())],
-            dtype=np.int32,
+            dtype=int_type,
         )
         self._wa = np.zeros(
             (batch_size, 2 * m * dim + 5 * dim + 11 * m**2 + 8 * m), dtype=np.float64
         )
-        self._iwa = np.zeros((batch_size, 3 * dim), dtype=np.int32)
-        self._lsave = np.zeros((batch_size, 4), dtype=np.int32)
-        self._isave = np.zeros((batch_size, 44), dtype=np.int32)
+        self._iwa = np.zeros((batch_size, 3 * dim), dtype=int_type)
+        self._lsave = np.zeros((batch_size, 4), dtype=int_type)
+        self._isave = np.zeros((batch_size, 44), dtype=int_type)
         self._dsave = np.zeros((batch_size, 29), dtype=np.float64)
 
     def lbfgsb_args(
@@ -202,7 +203,7 @@ class _TaskStatusManager:
         if self.is_batch_terminated[batch_id]:
             return True
         if self._judge_which_status(batch_id, status_id=1):  # New parameter suggested.
-            self._n_iterations[batch_id] += 1
+            self._n_iterations[batch_id] += 1  # This timing follows SciPy.
             self.is_batch_terminated[batch_id] |= self.reach_iteration_limit(
                 batch_id
             ) or self.reach_evaluation_limit(batch_id)
@@ -306,16 +307,13 @@ def batched_lbfgsb(
         routines for large scale bound constrained optimization (2011), ACM Transactions on
         Mathematical Software, 38, 1.
     """
-    original_x_shape = x0.shape
-    batched_x = x0.reshape(-1, original_x_shape[-1]).copy()
-    batch_size = len(batched_x)
+    batched_x = x0.reshape(-1, (original_x_shape := x0.shape)[-1]).copy()
+    b_indices = np.arange((batch_size := len(batched_x)), dtype=int)
     bounds = np.array([[-np.inf, np.inf]] * x0.shape[-1]).T if bounds is None else bounds.T
     data = _WorkingArraysAndFixedArgs(batch_size, bounds, m, factr, pgtol, max_line_search)
-
     f_vals = np.zeros(batch_size, dtype=np.float64)
     grads = np.zeros_like(batched_x, dtype=np.float64)
     tm = _TaskStatusManager(batch_size, max_iters=max_iters, max_evals=max_evals)
-    b_indices = np.arange(batch_size, dtype=int)
     while not all(tm.is_batch_terminated):
         batch_indices = b_indices[~tm.is_batch_terminated]
         f_vals[batch_indices], grads[batch_indices] = func_and_grad(batched_x[batch_indices])
@@ -325,5 +323,4 @@ def batched_lbfgsb(
                 _lbfgsb_inplace_update(b, x, f, g, data, tm.task_status[b])
                 if tm.should_evaluate(b):
                     break
-
     return batched_x.reshape(original_x_shape), f_vals.reshape(original_x_shape[:-1]), tm.info
