@@ -90,13 +90,7 @@ _is_lbfgsb_fortran = Version(scipy_version) < Version("1.15.0")
 
 class _DataConstantInPython:
     def __init__(
-        self,
-        batch_size: int,
-        bounds: np.ndarray,
-        m: int,
-        factr: float,
-        pgtol: float,
-        max_line_search: int,
+        self, batch_size: int, bounds: np.ndarray, m: int, factr: float, pgtol: float, maxls: int
     ) -> None:
         # See https://github.com/scipy/scipy/blob/v1.15.0/scipy/optimize/__lbfgsb.c
         self._csave: np.ndarray | None
@@ -112,7 +106,7 @@ class _DataConstantInPython:
         self._m = m
         self._factr = factr
         self._pgtol = pgtol
-        self._max_line_search = max_line_search
+        self._maxls = maxls
         dim = len(bounds[0])
         self._l = np.where(np.isinf(bounds[0]), 0.0, bounds[0])  # Lower bounds
         self._u = np.where(np.isinf(bounds[1]), 0.0, bounds[1])  # Upper bounds
@@ -150,7 +144,7 @@ class _DataConstantInPython:
             self._lsave[batch_id],
             self._isave[batch_id],
             self._dsave[batch_id],
-            self._max_line_search,
+            self._maxls,
             *((self._ln_task[batch_id],) if self._ln_task is not None else ()),
         )
 
@@ -175,81 +169,58 @@ class _TaskStatusManager:
         else:
             self.task_status[batch_id] = [status_id, task_id]
 
-    def _judge_which_status(self, batch_id: int, status_id: int) -> bool:
+    def _judge_status(self, batch_id: int, status_id: int) -> bool:
         if _is_lbfgsb_fortran:
             expected_msg = status_messages[status_id].encode()
             return self.task_status[batch_id].tobytes().startswith(expected_msg)
         else:
             return bool(self.task_status[batch_id, 0] == status_id)
 
-    def reach_iteration_limit(self, batch_id: int) -> bool:
+    def reach_iter_limit(self, batch_id: int) -> bool:
         if reach_limit := self._n_iterations[batch_id] >= self._max_iters:
             self.is_batch_terminated[batch_id] = True
             self._update_task_status(batch_id, 5, 504)
         return reach_limit
 
-    def reach_evaluation_limit(self, batch_id: int) -> bool:
+    def reach_eval_limit(self, batch_id: int) -> bool:
         if reach_limit := self._n_evals[batch_id] > self._max_evals:
             self.is_batch_terminated[batch_id] = True
             self._update_task_status(batch_id, 5, 502)
         return reach_limit
 
     def should_evaluate(self, batch_id: int) -> bool:
-        if should_evaluate := self._judge_which_status(batch_id, status_id=3):
+        if should_evaluate := self._judge_status(batch_id, status_id=3):
             self._n_evals[batch_id] += 1
         return should_evaluate
 
     def should_terminate_batch(self, batch_id: int) -> bool:
-        if self.is_batch_terminated[batch_id]:
+        b = batch_id
+        if self.is_batch_terminated[b]:
             return True
-        if self._judge_which_status(batch_id, status_id=1):  # New parameter suggested.
-            self._n_iterations[batch_id] += 1  # This timing follows SciPy.
-            self.is_batch_terminated[batch_id] |= self.reach_iteration_limit(
-                batch_id
-            ) or self.reach_evaluation_limit(batch_id)
-        elif not self._judge_which_status(
-            batch_id, status_id=0
-        ) and not self._judge_which_status(  # Start
-            batch_id, status_id=3
-        ):  # Next function evaluation
-            self.is_batch_terminated[batch_id] = True
-        return self.is_batch_terminated[batch_id]
-
-    @property
-    def _is_converged(self) -> list[bool]:
-        return [self._judge_which_status(b, status_id=4) for b in range(self._batch_size)]
-
-    @property
-    def _status_messages(self) -> list[str]:
-        messages = []
-        for b in range(self._batch_size):
-            if _is_lbfgsb_fortran:
-                messages.append(self.task_status[b].tobytes().decode().rstrip("\x00"))
-            else:
-                status_id, task_id = self.task_status[b]
-                messages.append(f"{status_messages[status_id]}: {task_messages[task_id]}")
-        return messages
+        elif self._judge_status(b, status_id=1):  # New parameter suggested.
+            self._n_iterations[b] += 1  # This timing follows SciPy.
+            self.is_batch_terminated[b] = self.reach_iter_limit(b) or self.reach_eval_limit(b)
+        elif not self._judge_status(b, status_id=0) and not self._judge_status(b, status_id=3):
+            # 0: Start, 3: Next function evaluation.
+            self.is_batch_terminated[b] = True
+        return self.is_batch_terminated[b]
 
     @property
     def info(self) -> dict[str, list[bool] | list[int] | list[str]]:
+        messages = [
+            (
+                ts.tobytes().decode().rstrip("\x00")
+                if _is_lbfgsb_fortran
+                else f"{status_messages[ts[0]]}: {task_messages[ts[1]]}"
+            )
+            for ts in self.task_status
+        ]
         return {
-            "is_converged": self._is_converged,
+            "is_converged": [self._judge_status(b, status_id=4) for b in range(self._batch_size)],
             "n_iterations": self._n_iterations.tolist(),
             "n_evals": self._n_evals.tolist(),
-            "messages": self._status_messages,
+            "messages": messages,
         }
-
-
-def _lbfgsb_inplace_update(
-    batch_id: int,
-    x: np.ndarray,
-    f: np.ndarray,
-    g: np.ndarray,
-    data: _DataConstantInPython,
-    task_status: np.ndarray,
-) -> None:
-    lbfgsb_args = data.lbfgsb_args(batch_id, task_status, x, f, g)
-    scipy_lbfgsb.setulb(*lbfgsb_args)  # x, f, g will be modified in place.
 
 
 def batched_lbfgsb(
@@ -286,7 +257,7 @@ def batched_lbfgsb(
             ``proj g_i`` is the i-th component of the projected gradient.
         max_evals:
             Maximum number of function evaluations before minimization terminates.
-        max_iter:
+        max_iters:
             Maximum number of algorithm iterations.
         max_line_search:
             Maximum number of line search steps (per iteration). Default is 20.
@@ -319,7 +290,7 @@ def batched_lbfgsb(
         for b in batch_indices:
             x, f, g, task_status = batched_x[b], f_vals[b], grads[b], tm.task_status[b]
             while not tm.should_terminate_batch(b):
-                _lbfgsb_inplace_update(b, x, f, g, data, task_status)
+                scipy_lbfgsb.setulb(*data.lbfgsb_args(b, task_status, x, f, g))  # Inplace update.
                 if tm.should_evaluate(b):
                     break
     return batched_x.reshape(original_x_shape), f_vals.reshape(original_x_shape[:-1]), tm.info
