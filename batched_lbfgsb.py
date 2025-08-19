@@ -288,9 +288,9 @@ def batched_lbfgsb(
     while (batch_indices := b_indices[~tm.is_batch_terminated]).size:
         f_vals[batch_indices], grads[batch_indices] = func_and_grad(batched_x[batch_indices])
         for b in batch_indices:
-            x, f, g, task_status = batched_x[b], f_vals[b], grads[b], tm.task_status[b]
+            lbfgsb_args = data.lbfgsb_args(b, tm.task_status[b], batched_x[b], f_vals[b], grads[b])
             while not tm.should_terminate_batch(b):
-                scipy_lbfgsb.setulb(*data.lbfgsb_args(b, task_status, x, f, g))  # Inplace update.
+                scipy_lbfgsb.setulb(*lbfgsb_args)  # x,f,g,task_status will be updated inplace.
                 if tm.should_evaluate(b):
                     break
     return batched_x.reshape(original_x_shape), f_vals.reshape(original_x_shape[:-1]), tm.info
