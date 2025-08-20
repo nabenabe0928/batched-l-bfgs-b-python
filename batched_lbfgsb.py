@@ -240,8 +240,9 @@ def batched_lbfgsb(
 
     Args:
         x0:
-            Initial guess.
+            Initial guess with the shape of (batch_size, dimension).
         bounds:
+            The lower and upper bounds of each parameter with the shape of (dimension, 2).
             ``(min, max)`` pairs for each element in ``x``, defining the bounds on that parameter.
             Use None or +-inf when there is no bound in that direction.
         m:
