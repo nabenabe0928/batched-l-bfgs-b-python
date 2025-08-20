@@ -264,6 +264,16 @@ def batched_lbfgsb(
         max_line_search:
             Maximum number of line search steps (per iteration). Default is 20.
 
+    Returns:
+        A tuple containing:
+        - The optimized parameters with the shape of (batch_size, dimension).
+        - The function values at the optimized parameters with the shape of (batch_size,).
+        - A dictionary containing convergence information, including:
+            - `is_converged`: A list of booleans indicating whether each batch converged.
+            - `n_iterations`: A list of the number of iterations for each batch.
+            - `n_evals`: A list of the number of function evaluations for each batch.
+            - `messages`: A list of messages indicating the status of each batch.
+
     Notes:
         SciPy uses a C-translated and modified version of the Fortran code, L-BFGS-B v3.0
         (released April 25, 2011, BSD-3 licensed). Original Fortran version was written by
